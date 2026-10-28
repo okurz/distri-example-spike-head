@@ -1,0 +1,59 @@
+---
+name: spike trusted
+# yamllint disable-line rule:truthy
+on:
+  workflow_run:
+    workflows:
+      - spike gate
+    types:
+      - completed
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump workflow_run context
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_REPO: ${{ github.event.workflow_run.repository.full_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REPO_FULL: ${{ github.event.workflow_run.head_repository.full_name }}
+          PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_JSON: ${{ toJSON(github.event) }}
+        run: |
+          echo "trusted RUN_ID=$RUN_ID RUN_REPO=$RUN_REPO"
+          echo "trusted HEAD_BRANCH=$HEAD_BRANCH HEAD_SHA=$HEAD_SHA"
+          echo "trusted HEAD_REPO_FULL=$HEAD_REPO_FULL"
+          echo "trusted CONCLUSION=$CONCLUSION"
+          echo "trusted PULL_REQUESTS=$PULL_REQUESTS"
+          printf '%s' "$EVENT_JSON" > event.json
+          jq '.workflow_run | {id, run_id, head_branch, head_sha,
+            conclusion, head_repository: .head_repository.full_name,
+            pull_requests}' event.json
+      - name: Try artifact download of the triggering run
+        id: artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-data
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: pr-data
+      - name: Report artifact result
+        run: |
+          echo "artifact step outcome: ${{ steps.artifact.outcome }}"
+          ls -la pr-data || echo "no pr-data dir"
+      - name: Resolve PR via head lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.full_name }}
+          LOOKUP_HEAD: ${{ github.event.workflow_run.head_repository.owner.login }}:${{ github.event.workflow_run.head_branch }}
+        run: |
+          echo "looking up head=$LOOKUP_HEAD in $BASE"
+          gh api "repos/$BASE/pulls?state=open&per_page=100" \
+            --jq ".[] | select(.head.label == \"$LOOKUP_HEAD\") | {number, html_url, sha: .head.sha}"
