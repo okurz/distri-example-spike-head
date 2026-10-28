@@ -1,0 +1,32 @@
+---
+name: spike gate
+# yamllint disable-line rule:truthy
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump pull_request context
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "gate EVENT=$EVENT RUN_REPO=$RUN_REPO RUN_ID=$RUN_ID"
+          echo "gate PR_NUMBER=$PR_NUMBER HEAD_REPO=$HEAD_REPO HEAD_REF=$HEAD_REF HEAD_SHA=$HEAD_SHA"
+      - name: Write PR data artifact
+        env:
+          EVENT_JSON: ${{ toJSON(github.event) }}
+        run: |
+          mkdir -p spike
+          printf '%s' "$EVENT_JSON" > spike/pr-data.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-data
+          path: spike/pr-data.json
